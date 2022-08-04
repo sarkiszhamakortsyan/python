@@ -1,0 +1,66 @@
+#!/usr/bin/python
+import requests
+import json
+import difflib
+import csv
+import os
+import datetime
+import time
+from email import utils
+
+import sys
+import difflib as df
+from requests.auth import HTTPBasicAuth
+
+username = 'API_ADMIN'
+password = 'DTNA123456'
+
+upload_url="https://localhost:8444/api/v1.4/transfers?limit=1000&offset=0&status=Failed&startTimeAfter={}%2C%20{}%20{}%20{}%20{}%3A{}%3A{}%20%2B0200&direction=Outgoing&resubmitted=false".format(sys.argv[1][0:3],sys.argv[2],sys.argv[3],sys.argv[4],sys.argv[5][0:2],sys.argv[5][3:5],sys.argv[5][6:])
+
+res=requests.get(upload_url,auth=HTTPBasicAuth(username, password),verify=False)
+resp_dict=res.json()
+
+str_fail=""
+str_success=""
+#Delete Old Files to create new one
+if os.path.exists("not_resubmit_failed_files.json"):
+os.remove("not_resubmit_failed_files.json")
+if os.path.exists("not_resubmit_failed_files.csv"):
+os.remove("not_resubmit_failed_files.csv")
+
+
+
+#Serilaize string output of the response object into a JSON object
+with open("not_resubmit_failed_files.json", "w") as write_file:
+json.dump(resp_dict,write_file, sort_keys=True, indent=4,separators=(',', ':'))
+
+#Serialize JSON object into dictionay object
+with open("not_resubmit_failed_files.json", "r") as read_file:
+data = json.load(read_file)
+
+transfer_dict=data['transferEntries']
+if data['transferEntries']:
+for x in data['transferEntries']:
+try:
+if x['transferEntry']['metadata']['links']['resubmit']:
+with open('not_resubmit_failed_files.csv', mode='a') as not_resubmit_failed:
+not_resubmit = csv.writer(not_resubmit_failed, delimiter=' ')
+not_resubmit.writerow([x['transferEntry']['account'], x['transferEntry']['filename'], x['transferEntry']['metadata']['links']['resubmit'], x['transferEntry']['startTime']])
+except KeyError:
+continue
+with open('not_resubmit_failed_files.csv', 'r') as filedesc:
+lines=filedesc.read().splitlines()
+for l in lines:
+x=l.split()
+
+#Resubmitting logic goes here
+print("Resubmitting file :{} ".format(x[1]))
+resubmit_url="{}".format(x[2])
+resubmit_response=requests.post(resubmit_url,auth=HTTPBasicAuth(username, password),verify=False)
+resubmit_dict=resubmit_response.json()
+
+
+else:
+with open('not_resubmit_failed_files.csv', mode='w') as not_resubmit_failed:
+not_resubmit = csv.writer(not_resubmit_failed, delimiter=' ')
+not_resubmit.writerow(["No Entries in last 10 minutes which have failed in outbound and they have not been resubmitted from GMFTS side"])
